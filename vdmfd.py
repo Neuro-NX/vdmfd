@@ -555,6 +555,11 @@ def get_and_check_file(filepath, criteria_list):
         print(colors.colorize("  Metadata: []", "white"))
         return None
 
+    if satisfies_conditions(metadata, filepath, criteria_list):
+        result = filepath.replace("\n", "").strip()
+        return f"\"{result}\""
+    return None
+
 def main():
     search_path, criteria_list, threads, filelist_path = parse_args(sys.argv)
     if not os.path.isdir(search_path):
