@@ -29,6 +29,7 @@ import json
 import math
 import shutil
 import time
+import textwrap
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -48,6 +49,70 @@ def print_header():
     #     print(ffprobe_ver)
     # except subprocess.CalledProcessError as e:
     #     print(f"Command failed with return code {e.returncode}")
+
+def print_help():
+    opts_general = {
+        '  -help': 'Show this help message and exit',
+        '  -version': 'Show the version of the program',
+        '  -filelist [=FILE]': 'if provided, output results to a file',
+        '  -output_format': 'Type of format to use for -filelist',
+        '  -threads': 'Set the number of threads to use',
+    }
+    opts_search = {
+        '  -duration': '<duration>',
+        '  -size': '[<comp>] <size>',
+        '  -filename': '<string>',
+        '  -path': '<string>',
+        '  -container': '<container>',
+        '  -codec_name': '<name>',
+        '  -codec_tag': '<tag_name>',
+        '  -aspect': '<aspect>',
+        '  -orientation': '<portrait|landscape|square>',
+        '  -bitrate': '[<comp>] <bitrate>',
+        '  -width': '[<comp>] <width>',
+        '  -height': '[<comp>] <height>',
+        '  -framerate': '[<comp>] <framerate>',
+        '  -pix_fmt': '<pix_fmt>',
+    }
+    opts_log_ops = {
+        '  -a': 'AND',
+        '  -o': 'OR',
+        '  -gt': 'greater than',
+        '  -lt': 'less than',
+        '  -gte': 'greater than or equal to',
+        '  -lte': 'less than or equal to',
+    }
+
+    max_option_length = max(len(option) for option in opts_general.keys())
+    print("Usage: python vdmfd.py <directory> [OPTIONS] ...")
+    print("\nOptions:\n")
+    for option, description in opts_general.items():
+        formatted_option = f"{option:<{max_option_length}}  {description}"
+        wrapped_description = textwrap.fill(formatted_option, width=70)
+        print(wrapped_description)
+
+    max_option_length = max(len(option) for option in opts_search.keys())
+    print("\nSearch Options:\n")
+    print("""Search options consists of longopts with single dash '-'.
+    """)
+    for option, description in opts_search.items():
+        formatted_option = f"{option:<{max_option_length}}  {description}"
+        wrapped_description = textwrap.fill(formatted_option, width=70)
+        print(wrapped_description)
+
+    max_option_length = max(len(option) for option in opts_log_ops.keys())
+    print("\nLogical Operators:\n")
+    print("""\r[-CRITERIA_OPT -LOGICAL_OPT ...]
+    \r\nIn order to specify logical conditions to narrow your search you must use
+    \rthis syntax to express value ranges. The order in which conditions are parsed will always be from left to right.
+    \r\nExample: Return matches with filename containing 'foo' AND 'bar' OR 'baz'.
+    \rvdmfd PATH -filename "foo" -a -filename "bar" -o -filename "baz"
+    \r\nYou can set a MIN:MAX limit by doing: '-size -gt A:UNIT -a -size -lt B:UNIT'\n
+    """)
+    for option, description in opts_log_ops.items():
+        formatted_option = f"{option:<{max_option_length}}  {description}"
+        wrapped_description = textwrap.fill(formatted_option, width=70)
+        print(wrapped_description)
 
 class Colors:
     # FIXME: How to both color text and make it bold?
@@ -357,7 +422,8 @@ def parse_args(argv):
         filelist_path: str or None      if provided, the full file path for output.
     """
     if len(argv) < 2:
-        sys.stderr.write("Usage: {} <directory> [options] ...\n".format(argv[0]))
+        sys.stderr.write("Usage: {} <directory> [options] ...\n\n".format(argv[0]))
+        sys.stderr.write(colors.colorize(f"Use -h or -help to get full help\n", "drk_yellow"))
         sys.exit(1)
 
     search_path = None
@@ -387,6 +453,11 @@ def parse_args(argv):
 
     args = argv[1:]
     idx = 0
+    arg = args[idx]
+
+    if arg == "-help" or arg == "-h":
+        print_help()
+        sys.exit(0)
 
     # First non-option argument is assumed as search directory.
     if not args[idx].startswith("-"):
