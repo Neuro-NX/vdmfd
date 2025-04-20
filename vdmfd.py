@@ -430,7 +430,7 @@ def parse_args(argv):
     criteria_list = []  # Each element: (criterion, value, operator)
     threads = os.cpu_count() or 4  # Default threads.
     filelist_path = None
-    pending_operator = None
+    pending_logical = None
 
     allowed_flags = {
         "-aspect",
@@ -494,7 +494,7 @@ def parse_args(argv):
                 filelist_path = os.path.join(DEFAULT_FILELIST_DIR, DEFAULT_FILELIST_FILENAME)
             idx += 1
         elif arg in logical_ops:
-            pending_operator = logical_ops[arg]
+            pending_logical = logical_ops[arg]
             idx += 1
         elif arg in allowed_flags:
             crit = arg.lstrip("-")
