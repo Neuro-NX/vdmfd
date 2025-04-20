@@ -59,6 +59,36 @@ SIZE_UNITS = {
 DEFAULT_FILELIST_FILENAME = "vdmfd_filelist.txt"
 DEFAULT_FILELIST_DIR = os.getcwd()
 
+VIDEO_EXT = {
+    '.avi',
+    '.divx',
+    '.flv',
+    '.mkv',
+    '.mov',
+    '.mp4',
+    '.m4v',
+    '.mpeg',
+    '.mpg',
+    '.webm',
+    '.wmv',
+    '.3gp',
+}
+
+VIDEO_PARTS_EXT = {
+    # Extensions that could contain packets of partial video data.
+    # These are currently excluded from the search.
+    '.ts',
+    '.seg',
+    '.part',
+    '.crdownload',
+    '.exi',
+    '.exo',
+    '.ogv',
+    '.ogm',
+    '.ogg',
+    '.m4s'
+}
+
 def parse_size_arg(arg):
     try:
         value, unit = arg.split(":")
@@ -291,13 +321,11 @@ def satisfies_conditions(metadata, filepath, criteria_list):
     return result
 
 def is_video(filepath):
-    try:
-        cmd = ["xdg-mime", "query", "filetype", filepath]
-        mime_type = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
-        return mime_type.startswith("video/")
-    except Exception as e:
-        sys.stderr.write(f"Could not determine MIME type for {filepath}: {e}\n")
-        return False
+    _, ext = os.path.splitext(filepath)
+    ext = ext.lower()
+    if ext in VIDEO_EXT:
+        return True
+    return False
 
 def get_and_check_file(filepath, criteria_list):
     """
