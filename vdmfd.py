@@ -89,6 +89,9 @@ VIDEO_PARTS_EXT = {
     '.m4s'
 }
 
+# Allowed comparison operators (these are for the value comparison)
+ALLOWED_COMPARISONS = {"-gt", "-gte", "-lt", "-lte"}
+
 def parse_size_arg(arg):
     try:
         value, unit = arg.split(":")
@@ -150,9 +153,12 @@ def get_video_metadata(filepath):
         sys.stderr.write(f"Error parsing JSON from ffprobe output for file {filepath}: {e}\n")
         return None
 
-def check_criteria(metadata, filepath, crit_type, crit_value):
-    file_lower = os.path.basename(filepath).lower()
-    if crit_type == "filename":
+def check_criteria(metadata, filepath, crit_type, comp_op, crit_value):
+    if crit_type == "path":
+        path_lower = os.path.dirname(filepath).lower()
+        return crit_value.lower() in path_lower
+    elif crit_type == "filename":
+        file_lower = os.path.basename(filepath).lower()
         return crit_value.lower() in file_lower
     elif crit_type == "container":
         ext = os.path.splitext(filepath)[1][1:].lower()
@@ -161,7 +167,7 @@ def check_criteria(metadata, filepath, crit_type, crit_value):
     fmt = metadata.get("format", {})
     duration = float(fmt.get("duration", 0))
     size = float(fmt.get("size", 0))
-    bitrate = float(fmt.get("bit_rate", 0)) / 1000 if fmt.get("bit_rate") else 0
+    bitrate = float(fmt.get("bit_rate", 0)) if fmt.get("bit_rate") else 0
 
     video_stream = None
     for s in metadata.get("streams", []):
@@ -171,32 +177,118 @@ def check_criteria(metadata, filepath, crit_type, crit_value):
 
     if crit_type == "duration":
         target = parse_duration_arg(crit_value)
-        return duration >= target
+        if comp_op == "eq":
+            return math.isclose(duration, target, rel_tol=0.01)
+        elif comp_op == "gt":
+            return duration > target
+        elif comp_op == "gte":
+            return duration >= target
+        elif comp_op == "lt":
+            return duration < target
+        elif comp_op == "lte":
+            return duration <= target
     elif crit_type == "size":
         value, unit = parse_size_arg(crit_value)
         target_bytes = value * SIZE_UNITS[unit]
-        return size >= target_bytes
+        if comp_op == "eq":
+            return math.isclose(size, target_bytes, rel_tol=0.01)
+        elif comp_op == "gt":
+            return size > target_bytes
+        elif comp_op == "gte":
+            return size >= target_bytes
+        elif comp_op == "lt":
+            return size < target_bytes
+        elif comp_op == "lte":
+            return size <= target_bytes
     elif crit_type == "bitrate":
         try:
             value, unit = parse_size_arg(crit_value)
-            target_kb = value
-            if unit != "kb":
-                target_kb = value * (SIZE_UNITS[unit] / SIZE_UNITS["kb"])
-            return bitrate >= target_kb
+            target_kbps = value
+            # ffprobe will return value in unit 'kbps'.
+            if unit == "kb":
+                target_kbps = value
+            elif unit == "mb":
+                target_kbps = value * 1000
+            elif unit == "gb":
+                target_kbps = value * 1000000
+            if comp_op == "eq":
+                return math.isclose(bitrate, target_kbps, rel_tol=0.01)
+            elif comp_op == "gt":
+                return bitrate > target_kbps
+            elif comp_op == "gte":
+                return bitrate >= target_kbps
+            elif comp_op == "lt":
+                return bitrate < target_kbps
+            elif comp_op == "lte":
+                return bitrate <= target_kbps
         except Exception as e:
             sys.stderr.write(f"Error parsing bitrate argument {crit_value}: {e}\n")
             return False
+    elif crit_type == "codec_name":
+        if not video_stream:
+            return False
+        codec_name = video_stream.get(crit_type)
+        if codec_name is None:
+            return False
+        return crit_value.lower() == codec_name.lower()
+    elif crit_type == "codec_tag":
+        if not video_stream:
+            return False
+        codec_tag = video_stream.get("codec_tag_string")
+        if codec_tag is None:
+            return False
+        return crit_value.lower() == codec_tag.lower()
+    elif crit_type == "aspect":
+        if not video_stream:
+            return False
+        aspect = video_stream.get("display_aspect_ratio")
+        if aspect is None:
+            return False
+        return crit_value == aspect
     elif crit_type in ["width", "height"]:
         if not video_stream:
             return False
         try:
-            value = float(crit_value.split(":")[0])
+            target = float(crit_value.split(":")[0])
         except Exception:
             return False
         attr = video_stream.get(crit_type)
         if attr is None:
             return False
-        return float(attr) >= value
+        current = float(attr)
+        if comp_op == "eq":
+            return math.isclose(current, target, rel_tol=0.01)
+        elif comp_op == "gt":
+            return current > target
+        elif comp_op == "gte":
+            return current >= target
+        elif comp_op == "lt":
+            return current < target
+        elif comp_op == "lte":
+            return current <= target
+    elif crit_type == "orientation":
+        if not video_stream:
+            return False
+        width = video_stream.get("width")
+        height = video_stream.get("height")
+        if width is None or height is None:
+            return False
+        w = float(width)
+        h = float(height)
+        orientation = crit_value.lower()
+        if orientation == "landscape" or orientation == "l":
+            return w > h
+        elif orientation == "portrait" or orientation == "p":
+            return w < h
+        elif orientation == "square" or orientation == "sq":
+            return w == h
+    elif crit_type == "pix_fmt":
+        if not video_stream:
+            return False
+        pix_fmt = video_stream.get(crit_type)
+        if pix_fmt is None:
+            return False
+        return crit_value.lower() == pix_fmt.lower()
     elif crit_type == "framerate":
         if not video_stream:
             return False
@@ -210,11 +302,19 @@ def check_criteria(metadata, filepath, crit_type, crit_value):
             except Exception:
                 fr = 0
         try:
-            value = float(crit_value.split(":")[0])
+            target = float(crit_value.split(":")[0])
         except Exception:
             return False
-        return fr >= value
-
+        if comp_op == "eq":
+            return math.isclose(fr, target, rel_tol=0.01)
+        elif comp_op == "gt":
+            return fr > target
+        elif comp_op == "gte":
+            return fr >= target
+        elif comp_op == "lt":
+            return fr < target
+        elif comp_op == "lte":
+            return fr <= target
     return False
 
 def parse_args(argv):
@@ -246,9 +346,22 @@ def parse_args(argv):
     pending_operator = None
 
     allowed_flags = {
-        "-duration", "-size", "-filename", "-container", 
-        "-bitrate", "-width", "-height", "-framerate"
+        "-aspect",
+        "-bitrate",
+        "-codec_name",
+        "-codec_tag",
+        "-container",
+        "-duration",
+        "-filename",
+        "-framerate",
+        "-height",
+        "-orientation",
+        "-path",
+        "-pix_fmt",
+        "-size",
+        "-width",
     }
+
     logical_ops = {"-a": "AND", "-o": "OR"}
 
     args = argv[1:]
@@ -293,12 +406,17 @@ def parse_args(argv):
             idx += 1
         elif arg in allowed_flags:
             crit = arg.lstrip("-")
+            comp_operator = "eq"  # default comparison
+            # Check if the next token is a comparison operator.
+            if idx + 1 < len(args) and args[idx + 1] in ALLOWED_COMPARISONS:
+                comp_operator = args[idx+1].lstrip("-")
+                idx += 1  # Consume the comparison operator.
             if idx+1 >= len(args):
                 sys.stderr.write(f"Expected argument after {arg}\n")
                 sys.exit(1)
             crit_value = args[idx+1]
-            criteria_list.append((crit, crit_value, pending_operator))
-            pending_operator = None
+            criteria_list.append((crit, comp_operator, crit_value, pending_logical))
+            pending_logical = None
             idx += 2
         else:
             sys.stderr.write(f"Unknown argument: {arg}\n")
@@ -309,11 +427,13 @@ def satisfies_conditions(metadata, filepath, criteria_list):
     if not criteria_list:
         return True
 
-    crit, value, _ = criteria_list[0]
-    result = check_criteria(metadata, filepath, crit, value)
-    for (crit, value, operator) in criteria_list[1:]:
-        current = check_criteria(metadata, filepath, crit, value)
-        op_to_use = operator if operator is not None else "AND"
+    # Start with the first criterion.
+    crit, comp_operator, value, logical_operator = criteria_list[0]
+    result = check_criteria(metadata, filepath, crit, comp_operator, value)
+    for (crit, comp_operator, value, logical_operator) in criteria_list[1:]:
+        current = check_criteria(metadata, filepath, crit, comp_operator, value)
+        # If no logical_operator is provided, default to AND.
+        op_to_use = logical_operator if logical_operator is not None else "AND"
         if op_to_use == "AND":
             result = result and current
         elif op_to_use == "OR":
