@@ -26,7 +26,28 @@ import os
 import sys
 import subprocess
 import json
+import math
+import shutil
+import time
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+version = "1.0.0"
+current_timestamp = datetime.now()
+formatted_timestamp = current_timestamp.strftime("%H:%M:%S")
+
+if shutil.which("ffprobe") is None:
+    sys.stderr.write("Error: ffprobe not installed or not found in PATH.\n")
+    sys.exit(1)
+
+def print_header():
+    header = "VDMFD Version {version} Copyright (c) 2025 Neuro-NX"
+    print(f"{header}\n")
+    # try:
+    #     ffprobe_ver = subprocess.check_output(["ffprobe", "-version"], text=True)
+    #     print(ffprobe_ver)
+    # except subprocess.CalledProcessError as e:
+    #     print(f"Command failed with return code {e.returncode}")
 
 class Colors:
     # FIXME: How to both color text and make it bold?
@@ -458,13 +479,10 @@ def get_and_check_file(filepath, criteria_list):
         return None
     metadata = get_video_metadata(filepath)
     if metadata is None:
-        sys.stderr.write(f"Skipping file due to problematic metadata: {filepath}\n")
+        print(colors.colorize(f"\nSkipped file:", "bold"), colors.colorize("✗", "yellow"), colors.colorize(f"Could not read metadata.\n", "white"))
+        print(colors.colorize("  File:", "white"), f"{filepath}")
+        print(colors.colorize("  Metadata: []", "white"))
         return None
-    if satisfies_conditions(metadata, filepath, criteria_list):
-        # Remove any newline characters and enclose result in double quotes.
-        result = filepath.replace("\n", "").strip()
-        return f"\"{result}\""
-    return None
 
 def main():
     search_path, criteria_list, threads, filelist_path = parse_args(sys.argv)
@@ -472,18 +490,41 @@ def main():
         sys.stderr.write(f"{search_path} is not a valid directory.\n")
         sys.exit(1)
 
-    results = []  # to hold successful file paths.
-    futures = []
+    results = []
+    jobs = []
+    match_count = 0
+
+    print_header()
+    # time.sleep(0.5)
+    print(colors.colorize("[→]:", "white"), colors.colorize(f"Running [executor] with threads: {threads}", "white"))
+    # time.sleep(0.5)
+    print(colors.colorize("[→]:", "white"), colors.colorize(f"Created new thread pool", "white"))
+
     with ThreadPoolExecutor(max_workers=threads) as executor:
+        # time.sleep(0.5)
+        print(colors.colorize("[→]:", "white"), colors.colorize(f"Locating videos in directory: '{search_path}'\n", "white"))
         for root, dirs, files in os.walk(search_path):
             for file in files:
                 filepath = os.path.join(root, file)
-                futures.append(executor.submit(get_and_check_file, filepath, criteria_list))
-        for future in as_completed(futures):
-            result = future.result()
-            if result:
-                print(f"File: {result}")  # still printing with prefix for console.
-                results.append(result)
+                jobs.append(executor.submit(get_and_check_file, filepath, criteria_list))
+        for job in as_completed(jobs):
+            try:
+                result = job.result()
+                if result:
+                    match_count += 1
+                    print(colors.colorize(f"\nFound match:", "bold"), colors.colorize("✓\n", "green"))
+                    print(colors.colorize("  File:", "white"), f"{result}")
+                    results.append(result)
+            except Exception as e:
+                print(colors.colorize(f"[ThreadPoolExecutor]: Failed:", "red"), (f"{e}"))
+
+    # TODO: Create table indexing ["sucess", "failed"]. Then print value below.
+    print(colors.colorize(f"\nReturned: {match_count}", "white"))
+    print(colors.colorize(f"Failed: []\n", "white"))
+
+    if match_count == 0:
+        sys.stderr.write(f"No videos found with specified criteria.\n")
+        sys.exit(1)
 
     # If filelist option was specified, write results to file.
     if filelist_path:
