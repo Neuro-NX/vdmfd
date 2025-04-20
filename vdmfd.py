@@ -36,8 +36,8 @@ SIZE_UNITS = {
     "gb": 1024 * 1024 * 1024,
 }
 
-DEFAULT_FILELIST_FILENAME = "video-filelist.txt"
-DEFAULT_FILELIST_DIR = "/tmp/"
+DEFAULT_FILELIST_FILENAME = "vdmfd_filelist.txt"
+DEFAULT_FILELIST_DIR = os.getcwd()
 
 def parse_size_arg(arg):
     try:
