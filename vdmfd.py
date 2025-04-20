@@ -322,11 +322,11 @@ def main():
         try:
             # Ensure the directory exists.
             os.makedirs(os.path.dirname(filelist_path), exist_ok=True)
-            with open(filelist_path, "w") as f:
-                # Write each result on a new line.
+            with open(filelist_path, "a") as f:
+                # Append each result on a new line.
                 for res in results:
                     f.write(f"{res}\n")
-            sys.stderr.write(f"Output to Filelist: {filelist_path}\n")
+            sys.stderr.write(f"Output to file: \n{filelist_path}\n")
         except Exception as e:
             sys.stderr.write(f"Error writing filelist: {e}\n")
 
